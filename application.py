@@ -2,7 +2,7 @@ from flask import Flask, request, send_file
 import pandas as pd
 import joblib
 
-app = Flask(__name__)
+application = app = Flask(__name__)
 
 model = joblib.load('model.pkl')
 
