@@ -1,12 +1,11 @@
 from flask import Flask, request, send_file
 import pandas as pd
-import pickle 
+from keras.models import load_model  # Importa la función para cargar modelos
 
 application = app = Flask(__name__)
 
-# Cambio aquí: usar pickle para cargar el modelo
-with open('model.pkl', 'rb') as model_file:
-    model = pickle.load(model_file)
+# Cambio aquí: usar la función load_model para cargar el modelo
+model = load_model('my_model.h5')  # Asumiendo que el modelo está guardado como 'model.h5'
 
 @app.route('/generate_excel', methods=['POST'])
 def generate_excel():
