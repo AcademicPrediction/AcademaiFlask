@@ -47,10 +47,6 @@ def generate_excel():
         X = np.array(X)
         y = np.array(y)
         
-        # Predecir para el último grado ingresado
-        predicciones = model.predict(dfs[-1].drop(columns=["Alumno"]).values)
-        predicciones = np.clip(predicciones, 0, 20)  # Asegurar valores en el rango [0,20]
-        df_predicciones[curso + ' Predicted'] = predicciones
         
     for curso in df_predicciones.columns[1:]:
         df_predicciones[curso] = df_predicciones[curso].apply(lambda x: round(x, 2))
