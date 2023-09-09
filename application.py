@@ -1,12 +1,11 @@
 from flask import Flask, request, send_file
+import os
 import pandas as pd
 import numpy as np
-from keras.models import load_model  # Importa la función para cargar modelos
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
 
-application = app = Flask(__name__)
-
-# Cambio aquí: usar la función load_model para cargar el modelo
-model = load_model('my_single_model.h5')  # Asumiendo que el modelo está guardado como 'model.h5'
+app = Flask(__name__)
 
 def ajustar_valores(valor):
     try:
@@ -21,43 +20,12 @@ def procesar_hoja(df, nombre_hoja):
     df.iloc[:, 1:] = df.iloc[:, 1:].applymap(ajustar_valores)
     return df
 
-@app.route('/generate_excel', methods=['POST'])
-def generate_excel():
-    if 'file' not in request.files:
-        return 'No file part', 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return 'No selected file', 400
-    
-    hojas = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-    dfs = []
-
-    for nombre_hoja, df in hojas.items():
-        df = procesar_hoja(df, nombre_hoja)
-        dfs.append(df)
-    
-    # Aquí es donde haces tus predicciones
-    df_predicciones = dfs[-1][['Alumno']].copy()
-
-    for curso in dfs[0].columns[1:]:
-        predicciones = model.predict(dfs[-1].drop(columns=["Alumno"]).values.astype(np.float32))
-        predicciones = np.clip(predicciones, 0, 20)
-        df_predicciones[curso + ' Predicted'] = predicciones.flatten()
-        
-        print(predicciones)
-        print(df_predicciones)
-
-    for curso in df_predicciones.columns[1:]:
-        df_predicciones[curso] = df_predicciones[curso].apply(lambda x: round(x, 2))
-
-    # Guardar el DataFrame de predicciones en un archivo Excel temporal
+def guardar_en_excel(df_predicciones):
     excel_path = 'temporary_file.xlsx'
+    
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df_predicciones.to_excel(writer, sheet_name="ACADEMAI", index=False)
         
-        # Ajustar automáticamente el tamaño de las columnas
         for column in writer.sheets["ACADEMAI"].columns:
             max_length = 0
             column = [cell for cell in column]
@@ -69,9 +37,76 @@ def generate_excel():
                     pass
             adjusted_width = (max_length + 2)
             writer.sheets["ACADEMAI"].column_dimensions[column[0].column_letter].width = adjusted_width
+            
+    return excel_path
+
+@app.route('/generate_excel', methods=['POST'])
+def predict():
+    modelo_guardado_path = 'my_model.h5'
+    model_existente = os.path.exists(modelo_guardado_path)
+
+    if model_existente:
+        print("Cargando modelo existente...")
+        model = tf.keras.models.load_model(modelo_guardado_path)
+
+    if 'file' not in request.files:
+        return "No file part", 400
+    file = request.files['file']
+
+    if file.filename == '':
+        return "No selected file", 400
     
+    hojas = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+    dfs = []
+
+    for nombre_hoja, df in hojas.items():
+        print(f"Procesando hoja: {nombre_hoja}")
+        df = procesar_hoja(df, nombre_hoja)
+        dfs.append(df)
+
+    df_predicciones = dfs[-1][['Alumno']].copy()
+
+    for curso in dfs[0].columns[1:]:
+        print(f"Entrenando modelo para: {curso}")
+
+        X = []
+        y = []
+
+        for idx, df in enumerate(dfs[:-1]):
+            features = df.drop(columns=["Alumno"]).values.tolist()
+            targets = dfs[idx+1][curso].values
+            X.extend(features)
+            y.extend(targets)
+
+        X = np.array(X)
+        y = np.array(y)
+
+        if model_existente and model.input_shape[1] == X.shape[1]:
+            pass
+        else:
+            print("Creando un nuevo modelo...")
+            model = tf.keras.Sequential([
+                tf.keras.layers.Dense(128, activation='relu', input_shape=(X.shape[1],)),
+                tf.keras.layers.Dropout(0.3),
+                tf.keras.layers.Dense(64, activation='relu'),
+                tf.keras.layers.Dropout(0.2),
+                tf.keras.layers.Dense(32, activation='relu'),
+                tf.keras.layers.Dense(1)
+            ])
+            model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        model.fit(X_train, y_train, epochs=100, validation_data=(X_test, y_test))
+
+        predicciones = model.predict(dfs[-1].drop(columns=["Alumno"]).values)
+        predicciones = np.clip(predicciones, 0, 20)
+        df_predicciones[curso + ' Predicted'] = predicciones
+        
+    for curso in df_predicciones.columns[1:]:
+        df_predicciones[curso] = df_predicciones[curso].apply(lambda x: round(x, 2))
+
+    excel_path = guardar_en_excel(df_predicciones)
     return send_file(excel_path, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(port=8000)
-    app.run(debug=True)
+    app.run(debug=True, port=8000)
