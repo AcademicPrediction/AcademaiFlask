@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
-app = Flask(__name__)
+application = app = Flask(__name__)
 
 def ajustar_valores(valor):
     try:
