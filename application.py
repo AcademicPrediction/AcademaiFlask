@@ -7,7 +7,7 @@ from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
 
-application = app = Flask(name)
+application = app = Flask(__name__)
 
 def ajustar_valores(valor):
     try:
