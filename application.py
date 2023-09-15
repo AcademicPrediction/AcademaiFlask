@@ -6,8 +6,8 @@ import tensorflow as tf
 from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
+from .routes import main
 
-application = app = Flask(__name__)
 
 def ajustar_valores(valor):
     try:
@@ -125,3 +125,8 @@ def predict():
 
 if __name__ == '__main__':
     app.run(debug=True, port=8000)
+    
+def create_app():
+    application = app = Flask(__name__)
+    app.register_blueprint(main)
+    return app
