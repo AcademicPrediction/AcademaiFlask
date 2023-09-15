@@ -62,7 +62,7 @@ def build_optimized_model(input_shape):
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
 
-@main.route('/generate_excel', methods=['POST'])
+@app.route('/generate_excel', methods=['POST'])
 def predict():
     modelo_guardado_path = 'my_model.h5'
     model_existente = os.path.exists(modelo_guardado_path)
@@ -123,10 +123,7 @@ def predict():
     excel_path = guardar_en_excel(df_predicciones)
     return send_file(excel_path, as_attachment=True)
 
-if __name__ == '__main__':
-    app.run(debug=True, port=8000)
     
 def create_app():
     application = app = Flask(__name__)
-    app.register_blueprint(main)
     return app
