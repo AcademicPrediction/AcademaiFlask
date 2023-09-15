@@ -62,7 +62,7 @@ def build_optimized_model(input_shape):
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     return model
 
-@app.route('/generate_excel', methods=['POST'])
+@main.route('/generate_excel', methods=['POST'])
 def predict():
     modelo_guardado_path = 'my_model.h5'
     model_existente = os.path.exists(modelo_guardado_path)
