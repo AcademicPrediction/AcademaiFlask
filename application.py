@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import regularizers
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
 
 application = app = Flask(__name__)
@@ -22,7 +24,6 @@ def procesar_hoja(df, nombre_hoja):
 
 def guardar_en_excel(df_predicciones):
     excel_path = 'temporary_file.xlsx'
-    
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df_predicciones.to_excel(writer, sheet_name="ACADEMAI", index=False)
         
@@ -37,8 +38,29 @@ def guardar_en_excel(df_predicciones):
                     pass
             adjusted_width = (max_length + 2)
             writer.sheets["ACADEMAI"].column_dimensions[column[0].column_letter].width = adjusted_width
-            
     return excel_path
+
+def build_optimized_model(input_shape):
+    model = tf.keras.Sequential([
+        tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(0.001), input_shape=input_shape),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.3),
+        
+        tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.3),
+        
+        tf.keras.layers.Dense(64, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.2),
+        
+        tf.keras.layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
+        tf.keras.layers.BatchNormalization(),
+        
+        tf.keras.layers.Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
 
 @app.route('/generate_excel', methods=['POST'])
 def predict():
@@ -55,14 +77,9 @@ def predict():
 
     if file.filename == '':
         return "No selected file", 400
-    
-    hojas = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-    dfs = []
 
-    for nombre_hoja, df in hojas.items():
-        print(f"Procesando hoja: {nombre_hoja}")
-        df = procesar_hoja(df, nombre_hoja)
-        dfs.append(df)
+    hojas = pd.read_excel(file, sheet_name=None, engine='openpyxl')
+    dfs = [procesar_hoja(df, nombre_hoja) for nombre_hoja, df in hojas.items()]
 
     df_predicciones = dfs[-1][['Alumno']].copy()
 
@@ -85,23 +102,21 @@ def predict():
             pass
         else:
             print("Creando un nuevo modelo...")
-            model = tf.keras.Sequential([
-                tf.keras.layers.Dense(128, activation='relu', input_shape=(X.shape[1],)),
-                tf.keras.layers.Dropout(0.3),
-                tf.keras.layers.Dense(64, activation='relu'),
-                tf.keras.layers.Dropout(0.2),
-                tf.keras.layers.Dense(32, activation='relu'),
-                tf.keras.layers.Dense(1)
-            ])
-            model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+            model = build_optimized_model((X.shape[1],))
+
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
+        model_checkpoint = ModelCheckpoint(modelo_guardado_path, save_best_only=True, monitor='val_loss', mode='min')
+
+        callbacks_list = [early_stopping, reduce_lr, model_checkpoint]
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        model.fit(X_train, y_train, epochs=100, validation_data=(X_test, y_test))
+        model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test), callbacks=callbacks_list)
 
         predicciones = model.predict(dfs[-1].drop(columns=["Alumno"]).values)
         predicciones = np.clip(predicciones, 0, 20)
         df_predicciones[curso + ' Predicted'] = predicciones
-        
+
     for curso in df_predicciones.columns[1:]:
         df_predicciones[curso] = df_predicciones[curso].apply(lambda x: round(x, 2))
 
