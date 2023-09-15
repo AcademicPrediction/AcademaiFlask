@@ -6,7 +6,6 @@ import tensorflow as tf
 from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
-from .routes import main
 
 
 def ajustar_valores(valor):
