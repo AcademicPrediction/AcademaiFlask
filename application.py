@@ -7,6 +7,11 @@ from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
 
+app = Flask(__name__)
+
+def create_app():
+    # Realizar la configuración aquí si es necesario
+    return app
 
 def ajustar_valores(valor):
     try:
@@ -121,8 +126,3 @@ def predict():
 
     excel_path = guardar_en_excel(df_predicciones)
     return send_file(excel_path, as_attachment=True)
-
-    
-def create_app():
-    application = app = Flask(__name__)
-    return app
