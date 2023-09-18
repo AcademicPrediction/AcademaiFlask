@@ -6,8 +6,12 @@ import tensorflow as tf
 from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
+import unicodedata
 
 application = app = Flask(__name__)
+
+def strip_accents(text):
+    return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
 def ajustar_valores(valor):
     try:
@@ -26,7 +30,6 @@ def guardar_en_excel(df_predicciones):
     excel_path = 'temporary_file.xlsx'
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df_predicciones.to_excel(writer, sheet_name="ACADEMAI", index=False)
-        
         for column in writer.sheets["ACADEMAI"].columns:
             max_length = 0
             column = [cell for cell in column]
@@ -45,18 +48,14 @@ def build_optimized_model(input_shape):
         tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(0.001), input_shape=input_shape),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
-        
         tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.3),
-        
         tf.keras.layers.Dense(64, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.2),
-        
         tf.keras.layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(0.001)),
         tf.keras.layers.BatchNormalization(),
-        
         tf.keras.layers.Dense(1)
     ])
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
@@ -64,31 +63,36 @@ def build_optimized_model(input_shape):
 
 @app.route('/generate_excel', methods=['POST'])
 def predict():
-    modelo_guardado_path = 'my_model.h5'
-    model_existente = os.path.exists(modelo_guardado_path)
-
-    if model_existente:
-        print("Cargando modelo existente...")
-        model = tf.keras.models.load_model(modelo_guardado_path)
-
     if 'file' not in request.files:
         return "No file part", 400
     file = request.files['file']
-
     if file.filename == '':
         return "No selected file", 400
 
     hojas = pd.read_excel(file, sheet_name=None, engine='openpyxl')
-    dfs = [procesar_hoja(df, nombre_hoja) for nombre_hoja, df in hojas.items()]
+    dfs = []
+
+    for nombre_hoja, df in hojas.items():
+        df = procesar_hoja(df, nombre_hoja)
+        dfs.append(df)
 
     df_predicciones = dfs[-1][['Alumno']].copy()
 
     for curso in dfs[0].columns[1:]:
-        print(f"Entrenando modelo para: {curso}")
+        curso_sin_tildes = strip_accents(curso)
+        modelo_guardado_path = f"model_{curso_sin_tildes}.h5"
+
+        model_existente = os.path.exists(modelo_guardado_path)
+        
+        if model_existente:
+            print(f"Cargando modelo existente para {curso}...")
+            model = tf.keras.models.load_model(modelo_guardado_path)
+        else:
+            print(f"Creando un nuevo modelo para {curso}...")
+            model = build_optimized_model((dfs[0].shape[1] - 1,))
 
         X = []
         y = []
-
         for idx, df in enumerate(dfs[:-1]):
             features = df.drop(columns=["Alumno"]).values.tolist()
             targets = dfs[idx+1][curso].values
@@ -98,16 +102,9 @@ def predict():
         X = np.array(X)
         y = np.array(y)
 
-        if model_existente and model.input_shape[1] == X.shape[1]:
-            pass
-        else:
-            print("Creando un nuevo modelo...")
-            model = build_optimized_model((X.shape[1],))
-
         early_stopping = EarlyStopping(monitor='val_loss', patience=10)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.0001)
         model_checkpoint = ModelCheckpoint(modelo_guardado_path, save_best_only=True, monitor='val_loss', mode='min')
-
         callbacks_list = [early_stopping, reduce_lr, model_checkpoint]
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
